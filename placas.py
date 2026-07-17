@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, text
-import urllib.parse
 from datetime import datetime
 import os
 
@@ -15,10 +14,34 @@ for pasta in [PASTA_CROQUIS, PASTA_ANTES, PASTA_DEPOIS]:
     if not os.path.exists(pasta):
         os.makedirs(pasta)
 
-# --- CONEXÃO COM O SEU BANCO CSRT ---
-usuario = "root"
-senha_codificada = urllib.parse.quote_plus("Veneza3625@")
-engine = create_engine(f"mysql+mysqlconnector://{usuario}:{senha_codificada}@localhost:3306/csrt")
+# --- CONEXÃO COM O BANCO DE TESTE (SQLITE) ---
+engine = create_engine("sqlite:///fluxo_teste.db")
+
+# Cria a tabela automaticamente caso esteja rodando no SQLite pela primeira vez
+with engine.connect() as conn:
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS fluxo_notas (
+            PLACA VARCHAR(50) PRIMARY KEY,
+            NSPR VARCHAR(50),
+            SUPERVISOR VARCHAR(100),
+            SOLICITANTE VARCHAR(100),
+            CROQUI VARCHAR(255),
+            CENTRO_TRABALHO VARCHAR(150),
+            DATA_SOLICITACAO VARCHAR(10),
+            DATA_VENCIMENTO VARCHAR(10),
+            STATUS VARCHAR(50),
+            ORCAMENTO_MATERIAL DECIMAL(10,2),
+            NOME_ALMOXARIFE VARCHAR(100),
+            DATA_LIBERADA VARCHAR(10),
+            INSTALADOR VARCHAR(100),
+            DATA_INSTALADA VARCHAR(10),
+            FOTO_ANTES VARCHAR(255),
+            FOTO_DEPOIS VARCHAR(255),
+            FECHADOR VARCHAR(100),
+            DATA_FECHAMENTO VARCHAR(10)
+        )
+    """))
+    conn.commit()
 
 st.title("🔄 Fluxo de Notas e Instalações")
 
@@ -44,7 +67,6 @@ if papel == "📊 Painel de Controle (Acompanhamento)":
     if df_geral.empty:
         st.info("Nenhuma solicitação cadastrada no sistema ainda! Vá na 'Etapa 1' para começar.")
     else:
-        # Indicadores
         tot_geral = len(df_geral)
         tot_almox = len(df_geral[df_geral['STATUS'] == 'Aguardando Orçamento/Material'])
         tot_campo = len(df_geral[df_geral['STATUS'] == 'Aguardando Instalação'])
@@ -59,8 +81,6 @@ if papel == "📊 Painel de Controle (Acompanhamento)":
         c5.metric("✅ Finalizadas", tot_ok)
 
         st.markdown("---")
-
-        # Abas de Status
         st.write("### 🗂️ Status de Cada Placa")
         
         aba1, aba2, aba3, aba4, aba_busca = st.tabs([
@@ -78,7 +98,6 @@ if papel == "📊 Painel de Controle (Acompanhamento)":
                 st.success("Nenhuma placa parada nesta etapa! 🎉")
             else:
                 st.dataframe(df_aba1[['PLACA', 'NSPR', 'SUPERVISOR', 'SOLICITANTE', 'CENTRO_TRABALHO', 'DATA_SOLICITACAO', 'DATA_VENCIMENTO']], use_container_width=True, hide_index=True)
-                
                 placa_croqui_ver = st.selectbox("Selecione uma placa para visualizar o Croqui de Serviço:", df_aba1['PLACA'], key="ver_croqui_aba1")
                 reg_croqui = df_aba1[df_aba1['PLACA'] == placa_croqui_ver].iloc[0]
                 if os.path.exists(str(reg_croqui['CROQUI'])):
@@ -99,7 +118,6 @@ if papel == "📊 Painel de Controle (Acompanhamento)":
                 st.info("Nenhuma nota pendente de fechamento.")
             else:
                 st.dataframe(df_aba3[['PLACA', 'NSPR', 'SUPERVISOR', 'INSTALADOR', 'DATA_INSTALADA', 'SOLICITANTE']], use_container_width=True, hide_index=True)
-                
                 placa_fotos = st.selectbox("Selecione a placa instalada para checar o trabalho:", df_aba3['PLACA'], key="fotos_aba3")
                 reg_foto = df_aba3[df_aba3['PLACA'] == placa_fotos].iloc[0]
                 
@@ -142,10 +160,10 @@ elif papel == "1. Criar Solicitação (Pessoa A)":
     with col1:
         placa = st.text_input("Placa:").upper()
         nspr = st.text_input("Número da NSPR (Identificador do Serviço):").upper()
-        supervisor = st.text_input("Nome do Supervisor:")  # 👈 NOVO CAMPO SUPERVISOR!
+        supervisor = st.text_input("Nome do Supervisor:")
         solicitante = st.text_input("Quem está solicitando?")
     with col2:
-        centro_trabalho = st.text_input("Centro de Trabalho:")  # 👈 ALTERADO DE COORDENADA PARA CENTRO DE TRABALHO!
+        centro_trabalho = st.text_input("Centro de Trabalho:")
         foto_croqui = st.file_uploader("Insira a foto/croqui do serviço:", type=["png", "jpg", "jpeg"])
         data_vencimento = st.date_input("Data de Vencimento:", min_value=datetime.today())
     
@@ -154,7 +172,6 @@ elif papel == "1. Criar Solicitação (Pessoa A)":
 
     if st.button("Enviar para Almoxarifado", type="primary"):
         if placa and nspr and supervisor and solicitante and foto_croqui:
-            # Salva fisicamente a foto do croqui
             caminho_croqui = os.path.join(PASTA_CROQUIS, f"{placa}_croqui.jpg")
             with open(caminho_croqui, "wb") as f:
                 f.write(foto_croqui.getbuffer())
@@ -162,16 +179,16 @@ elif papel == "1. Criar Solicitação (Pessoa A)":
             novo = {
                 'PLACA': placa,
                 'NSPR': nspr,
-                'SUPERVISOR': supervisor,  # 👈 Gravando supervisor no banco
+                'SUPERVISOR': supervisor,
                 'SOLICITANTE': solicitante,
                 'CROQUI': caminho_croqui,
-                'CENTRO_TRABALHO': centro_trabalho,  # 👈 Gravando centro de trabalho no banco
+                'CENTRO_TRABALHO': centro_trabalho,
                 'DATA_SOLICITACAO': datetime.now().strftime("%Y-%m-%d"),
                 'DATA_VENCIMENTO': data_vencimento.strftime("%Y-%m-%d"),
                 'STATUS': 'Aguardando Orçamento/Material'
             }
             pd.DataFrame([novo]).to_sql('fluxo_notas', con=engine, if_exists='append', index=False)
-            st.success(f"Solicitação da placa {placa} (NSPR: {nspr}) registrada sob a supervisão de {supervisor}!")
+            st.success(f"Solicitação da placa {placa} (NSPR: {nspr}) registrada com sucesso!")
             st.rerun()
         else:
             st.error("Por favor, preencha todos os campos obrigatórios (Placa, NSPR, Supervisor, Solicitante e Croqui)!")
@@ -190,7 +207,7 @@ elif papel == "2. Orçamento e Almoxarifado (Pessoa B)":
         placa_selecionada = opcoes[opcao_selecionada]
         
         registro = df_almox[df_almox['PLACA'] == placa_selecionada].iloc[0]
-        st.info(f"**NSPR:** {registro['NSPR']} | **Supervisor:** {registro['SUPERVISOR']} | **Solicitante:** {registro['SOLICITANTE']} | **Vence em:** {registro['DATA_VENCIMENTO']}\n\n🏢 **Centro de Trabalho:** {registro['CENTRO_TRABALHO']}")
+        st.info(f"**NSPR:** {registro['NSPR']} | **Supervisor:** {registro['SUPERVISOR']} | **Solicitante:** {registro['SOLICITANTE']}\n\n🏢 **Centro de Trabalho:** {registro['CENTRO_TRABALHO']}")
         
         if os.path.exists(str(registro['CROQUI'])):
             st.image(registro['CROQUI'], caption="Croqui Anexado pela Solicitação", width=300)
@@ -232,8 +249,8 @@ elif papel == "3. Fila de Instalação/Campo (Pessoa C)":
         placa_selecionada = opcoes[opcao_selecionada]
         
         registro_campo = df_campo[df_campo['PLACA'] == placa_selecionada].iloc[0]
-        
         st.info(f"🏢 **Centro de Trabalho:** {registro_campo['CENTRO_TRABALHO']} | **NSPR:** {registro_campo['NSPR']} | **Supervisor:** {registro_campo['SUPERVISOR']}")
+        
         if os.path.exists(str(registro_campo['CROQUI'])):
             st.image(registro_campo['CROQUI'], caption="Croqui/Modelo de Referência", width=300)
 
@@ -294,7 +311,6 @@ elif papel == "4. Fechamento da Nota (Pessoa D)":
         placa_selecionada = opcoes[opcao_selecionada]
         
         registro = df_fechamento[df_fechamento['PLACA'] == placa_selecionada].iloc[0]
-        
         st.write(f"**NSPR:** {registro['NSPR']} | **Supervisor:** {registro['SUPERVISOR']} | **Instalado por:** {registro['INSTALADOR']} em {registro['DATA_INSTALADA']}")
         
         st.markdown("##### 🔍 Comparativo Completo do Serviço:")
