@@ -17,7 +17,7 @@ for pasta in [PASTA_CROQUIS, PASTA_ANTES, PASTA_DEPOIS]:
 # --- CONEXÃO COM O BANCO DE TESTE (SQLITE) ---
 engine = create_engine("sqlite:///fluxo_teste.db")
 
-# Cria a tabela automaticamente caso esteja rodando no SQLite pela primeira vez
+# Cria a tabela automaticamente 
 with engine.connect() as conn:
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS fluxo_notas (
